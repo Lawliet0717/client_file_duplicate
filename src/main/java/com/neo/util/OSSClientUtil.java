@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.*;
 import java.util.UUID;
 
 
@@ -51,6 +52,19 @@ public class OSSClientUtil {
     }
 
     /**
+     * 上传文件标签
+     * @param label
+     */
+    public static void uploadLabel(String label) {
+        // 创建OSSClient实例
+        OSSClient ossClient = new OSSClient(ENDPOINT, ACCESS_KEY_ID, ACCESS_KEY_SECRET);
+        // 上传文件标签
+        ossClient.putObject(BUCKETNAME, label, new ByteArrayInputStream(label.getBytes()));
+        // 关闭OSSClient
+        ossClient.shutdown();
+    }
+
+    /**
      * 判断标签是否已经存在
      * @param fileName
      * @return
@@ -61,7 +75,7 @@ public class OSSClientUtil {
 
         // 判断文件是否存在。doesObjectExist还有一个参数isOnlyInOSS，如果为true则忽略302重定向或镜像；如果
         //为false，则考虑302重定向或镜像。
-        boolean found = ossClient.doesObjectExist("<yourBucketName>", "<yourObjectName>");
+        boolean found = ossClient.doesObjectExist(BUCKETNAME, fileName);
         //System.out.println(found);
 
         // 关闭OSSClient。
