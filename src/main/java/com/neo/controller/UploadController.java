@@ -22,7 +22,7 @@ import java.util.BitSet;
 import org.apache.log4j.Logger;
 
 /**
- * @author RLY
+ * @author ZZY
  */
 @Controller
 public class UploadController {
@@ -36,8 +36,6 @@ public class UploadController {
 
     //保存到指定目录
     //private static String UPLOAD_FOLDER = "E://temp//";
-
-
 
     @GetMapping("/")
     public String index() {
@@ -98,10 +96,27 @@ public class UploadController {
                 redirectAttributes.addFlashAttribute("message",
                         "You successfully uploaded '" + file.getOriginalFilename() + "'");
             } else {
-                // 云端已经存在文件
+                // 云端已经存在标签
                 logger.info("OSS is already existing this label！");
-                redirectAttributes.addFlashAttribute("message",
-                         file.getOriginalFilename() + " is already exist");
+                String plainText = new String(file.getBytes());
+                //生成布隆过滤器
+                BloomFileter fileter = new BloomFileter(8);
+                String[] str = new String[8];
+                int length = plainText.length();
+                int n = length/8;
+                for(int i = 0; i < 8; i++) {
+                    str[i] = plainText.substring(i*n, i*n + n);
+                    fileter.addIfNotExist(str[i]);
+                }
+                //布隆过滤器的标记数组，上传到服务器判断是否已经存在
+                BitSet bitSet = fileter.getBitSet();
+                if(OSSClientUtil.isFileExist(bitSet.toString()) == true) {
+                    redirectAttributes.addFlashAttribute("message",
+                            file.getOriginalFilename() + " is already exist. You are the owner of the file!");
+                } else {
+                    redirectAttributes.addFlashAttribute("message",
+                            file.getOriginalFilename() + " is already exist. You are not the owner!!!");
+                }
             }
 
         } catch (IOException e) {
