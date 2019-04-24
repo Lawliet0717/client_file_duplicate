@@ -1,5 +1,8 @@
 package com.neo.controller;
 
+import com.neo.util.BloomFileter;
+import com.neo.util.BytesToHex;
+import com.neo.util.DESUtil;
 import com.neo.util.OSSClientUtil;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +17,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.BitSet;
+
 import org.apache.log4j.Logger;
 
 /**
@@ -41,21 +46,45 @@ public class UploadController {
 
     @PostMapping("/upload")
     public String singleFileUpload(@RequestParam("file") MultipartFile file,
-                                   RedirectAttributes redirectAttributes) {
+                                   RedirectAttributes redirectAttributes) throws Exception {
         if (file.isEmpty()) {
             redirectAttributes.addFlashAttribute("message", "Please select a file to upload");
             return "redirect:uploadStatus";
         }
 
         try {
-            //上传标签
+            //生成标签
             String label = DigestUtils.sha1Hex(new String(file.getBytes()));
+            //检查云端是否存在标签
             boolean found = OSSClientUtil.isFileExist(label);
+            //云端不存在标签，继续上传标签以及加密后的文件
             if(found == false) {
-                OSSClientUtil.uploadLabel(label);
-                String fileName= OSSClientUtil.createFileName(file.getOriginalFilename());
+                //文件的明文
+                String plainText = new String(file.getBytes());
+                //上传标签
+                OSSClientUtil.uploadString(label);
+                //生成DES加密用的秘钥
+                String key = DigestUtils.md5Hex(new String(file.getBytes())).substring(0,8);
+                byte[] keys = key.getBytes();
+                //加密文件得到密文
+                byte[] desResult = DESUtil.encryptDES(file.getBytes(), keys);
+                String ciperText = BytesToHex.fromBytesToHex(desResult);
+                //生成布隆过滤器
+                BloomFileter fileter = new BloomFileter(8);
+                String[] str = new String[8];
+                int length = plainText.length();
+                int n = length/8;
+                for(int i = 0; i < 8; i++) {
+                    str[i] = plainText.substring(i*n, i*n + n);
+                    fileter.addIfNotExist(str[i]);
+                }
+                //布隆过滤器的标记数组，作为文件的签名一起上传
+                BitSet bitSet = fileter.getBitSet();
+                String fileName = OSSClientUtil.createFileName(file.getOriginalFilename());
                 //上传文件
                 fileName=OSSClientUtil.uploadFile(file.getInputStream(),fileName);
+                //上传文件签名
+                OSSClientUtil.uploadString(bitSet.toString());
 
                 byte[] bytes = file.getBytes();
                 Path path = Paths.get(UPLOAD_FOLDER + file.getOriginalFilename());
@@ -69,6 +98,7 @@ public class UploadController {
                 redirectAttributes.addFlashAttribute("message",
                         "You successfully uploaded '" + file.getOriginalFilename() + "'");
             } else {
+                // 云端已经存在文件
                 logger.info("OSS is already existing this label！");
                 redirectAttributes.addFlashAttribute("message",
                          file.getOriginalFilename() + " is already exist");
